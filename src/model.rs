@@ -27,11 +27,23 @@ impl<'a> Mlp<'a> {
         Self { c_fc, c_proj }
     }
 
+
     fn forward(&self, tensor: &mut OwnedTensor) {
         self.c_fc.forward(tensor);
         gelu(tensor);
         self.c_proj.forward(tensor);
     }
+
+    fn special_forward(&self, tensor: &mut OwnedTensor) {
+        println!("FCW {:#?}", &self.c_fc.weight.shape);
+        println!("FCB {:#?}", &self.c_fc.bias.shape);
+        println!("CPW {:#?}", &self.c_proj.weight.shape);
+        println!("CPB {:#?}", &self.c_proj.bias.shape);
+        self.c_fc.forward(tensor);
+        gelu(tensor);
+        self.c_proj.forward(tensor);
+    }
+
 }
 
 #[derive(Clone)]
@@ -124,10 +136,22 @@ impl<'a> Gpt2Layer<'a> {
         add(&residual, tensor);
         let residual = tensor.clone();
         self.ln_2.forward(tensor);
-
         self.mlp.forward(tensor);
         add(&residual, tensor);
     }
+
+    fn special_forward(&self, tensor: &mut OwnedTensor, past_key_value: &mut PastKeyValue) {
+        let residual = tensor.clone();
+        self.ln_1.forward(tensor);
+        self.attention.forward(tensor, past_key_value);
+        add(&residual, tensor);
+        let residual = tensor.clone();
+        self.ln_2.forward(tensor);
+        self.mlp.special_forward(tensor);
+        add(&residual, tensor);
+    }
+
+
 }
 
 #[derive(Clone)]
@@ -144,8 +168,14 @@ impl<'a> Gpt2Model<'a> {
     }
 
     fn forward(&self, tensor: &mut OwnedTensor, past_key_values: &mut PastKeyValues) {
+        let mut first = true;
         for (layer, past_key_value) in self.layers.iter().zip(past_key_values.iter_mut()) {
-            layer.forward(tensor, past_key_value);
+            if first {
+              layer.special_forward(tensor, past_key_value);
+            } else {
+              layer.forward(tensor, past_key_value);
+            }
+            first = false;
         }
     }
 }

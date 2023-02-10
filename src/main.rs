@@ -1,8 +1,9 @@
 use axum::{
     extract::State,
-    response::IntoResponse,
+    response::{IntoResponse,Html},
     routing::{get, post},
-    Json, Router,
+    http::StatusCode, Json, Router,
+   extract::Form,
 };
 use fast_gpt2::{download::download, model::Gpt2, ops::special_argmax, Gpt2Error};
 use memmap2::{Mmap, MmapOptions};
@@ -13,6 +14,8 @@ use std::net::SocketAddr;
 use tokenizers::Tokenizer;
 use tower_http::trace::{self, TraceLayer};
 use tracing::{instrument, Level};
+use regex::Regex;
+
 
 #[derive(Clone)]
 struct AppState {
@@ -106,15 +109,54 @@ struct Outputs {
     generated_text: String,
 }
 
-async fn health() -> impl IntoResponse {
-    "Ok"
+//async fn health() -> impl IntoResponse {
+async fn health() -> Html<&'static str> {
+Html(
+"
+  <html>
+  <head>
+    <title>POST Request Example</title>
+  </head>
+  <body>
+                <form action=\"/\" method=\"post\">
+                    <label for=\"name\">
+                        Enter your text:
+                        <input type=\"text\" name=\"inputs\">
+                    </label>
+                    <input type=\"submit\" value=\"Send input!\">
+                </form>
+    <div id=\"output\">Test</div>
+    <script>
+      const form = document.querySelector('form');
+      const output = document.querySelector('#output');
+      form.addEventListener('submit', (event) => {
+        console.log(\"done\");
+        event.preventDefault();
+        const formData = new FormData(form);
+        fetch('/', {
+          method: 'POST',
+          body: formData
+        })
+        .then(response => response.text())
+        .then((data) => {
+          output.innerHTML = data;
+        });
+      });
+    </script>
+  </body>
+</html>
+"
+)
 }
 
 async fn inference((State(state), payload): (State<AppState>, String)) -> impl IntoResponse {
     let payload: Inputs = if let Ok(payload) = serde_json::from_str(&payload) {
         payload
     } else {
-        Inputs { inputs: payload }
+        let re = Regex::new(r"\r\n\r\n([^\r]*)\r\n").unwrap();
+        let a = re.captures(&payload).unwrap()[0].to_string().trim().to_string();
+        println!("DEBUG3 {:#?}", a);
+        Inputs { inputs: a }
     };
     let tokenizer = state.tokenizer;
     let encoded = tokenizer.encode(payload.inputs, false).unwrap();
@@ -128,6 +170,8 @@ async fn inference((State(state), payload): (State<AppState>, String)) -> impl I
         current_ids = vec![new_id as u32];
     }
     let generated_text = tokenizer.decode(ids, false).unwrap();
-    let output = Outputs { generated_text };
-    Json(vec![output])
+    //let output = Outputs { generated_text };
+    println!("DEBUG {}", generated_text);
+    generated_text
+    //Json(vec![output])
 }

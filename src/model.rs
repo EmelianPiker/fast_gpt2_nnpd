@@ -28,7 +28,7 @@ impl<'a> Mlp<'a> {
     }
 
 
-    fn forward(&self, tensor: &mut OwnedTensor) {
+    pub fn forward(&self, tensor: &mut OwnedTensor) {
         self.c_fc.forward(tensor);
         gelu(tensor);
         self.c_proj.forward(tensor);
@@ -105,7 +105,7 @@ impl<'a> Attention<'a> {
 pub struct Gpt2Layer<'a> {
     ln_1: LayerNorm<'a>,
     ln_2: LayerNorm<'a>,
-    mlp: Mlp<'a>,
+    pub mlp: Mlp<'a>,
     attention: Attention<'a>,
 }
 
@@ -156,7 +156,7 @@ impl<'a> Gpt2Layer<'a> {
 
 #[derive(Clone)]
 pub struct Gpt2Model<'a> {
-    layers: Vec<Gpt2Layer<'a>>,
+    pub layers: Vec<Gpt2Layer<'a>>,
 }
 
 impl<'a> Gpt2Model<'a> {
@@ -298,7 +298,7 @@ impl<'a> LayerNorm<'a> {
 pub struct Gpt2<'a> {
     wte: Embedding<'a>,
     wpe: Embedding<'a>,
-    h: Gpt2Model<'a>,
+    pub h: Gpt2Model<'a>,
     ln_f: LayerNorm<'a>,
     lm_head: UnbiasedLinear<'a>,
     num_heads: usize,

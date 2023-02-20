@@ -34,54 +34,55 @@ impl<'a> Mlp<'a> {
     }
 
     async fn special_forward(&self, tensor: &mut OwnedTensor) {
-        use jsonrpsee_core::client::ClientT;
-        use jsonrpsee_http_client::{HeaderMap, HeaderValue, HttpClientBuilder};
-        let client = HttpClientBuilder::default()
-            .build("http://127.0.0.1:9221")
-            .unwrap();
-        let mut input: Vec<u8> = vec![];
-        for i in 0..768 {
-            let mut part = [0_u8; 4];
-            part = unsafe { std::mem::transmute(tensor.data[i]) };
-            input.push(part[0]);
-            input.push(part[1]);
-            input.push(part[2]);
-            input.push(part[3]);
-        }
-        let out = client
-            .request::<String, _>("nn_compute_out", vec![hex::encode(input)])
-            .await;
-        let dec = hex::decode(&out.as_ref().unwrap().as_bytes()[2..]).unwrap();
-        let len = dec.len();
         let mut data: Vec<f32> = vec![];
-        for i in 0..768 {
-            let mut part = [0_u8; 4];
-            if (i * 4 + 3) < len {
-                part[0] = dec[i * 4 + 0];
-                part[1] = dec[i * 4 + 1];
-                part[2] = dec[i * 4 + 2];
-                part[3] = dec[i * 4 + 3];
+        if tensor.shape[0] == 1 && tensor.shape[1] == 768 {
+            use jsonrpsee_core::client::ClientT;
+            use jsonrpsee_http_client::{HeaderMap, HeaderValue, HttpClientBuilder};
+            let client = HttpClientBuilder::default()
+                .build("http://127.0.0.1:9221")
+                .unwrap();
+            let mut input: Vec<u8> = vec![];
+            for i in 0..768 {
+                let mut part = [0_u8; 4];
+                part = unsafe { std::mem::transmute(tensor.data[i]) };
+                input.push(part[0]);
+                input.push(part[1]);
+                input.push(part[2]);
+                input.push(part[3]);
             }
-            data.push(unsafe { std::mem::transmute(part) });
+            let out = client
+                .request::<String, _>("nn_compute_out", vec![hex::encode(input)])
+                .await;
+            let dec = hex::decode(&out.as_ref().unwrap().as_bytes()[2..]).unwrap();
+            let len = dec.len();
+            for i in 0..768 {
+                let mut part = [0_u8; 4];
+                if (i * 4 + 3) < len {
+                    part[0] = dec[i * 4 + 0];
+                    part[1] = dec[i * 4 + 1];
+                    part[2] = dec[i * 4 + 2];
+                    part[3] = dec[i * 4 + 3];
+                }
+                data.push(unsafe { std::mem::transmute(part) });
+            }
         }
 
-        let skip_check = false;
-        if !skip_check {
-            self.c_fc.forward(tensor);
-            gelu(tensor);
-            self.c_proj.forward(tensor);
+        self.c_fc.forward(tensor);
+        gelu(tensor);
+        self.c_proj.forward(tensor);
+
+        if tensor.shape[0] == 1 && tensor.shape[1] == 768 {
             let mut diff = vec![];
             for i in 0..768 {
                 if tensor.data[i] != data[i] {
                     diff.push((tensor.data[i], data[i]));
                 }
             }
-            println!("DIFF {}", diff.len());
             if diff.len() > 0 {
                 panic!("{:#?}", diff);
             }
+            tensor.data = data;
         }
-        tensor.data = data;
     }
 }
 

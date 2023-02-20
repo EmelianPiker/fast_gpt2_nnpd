@@ -4,8 +4,8 @@ use safetensors::tensor::{SafeTensors, TensorView};
 
 #[derive(Clone)]
 pub struct Mlp<'a> {
-    c_fc: Linear<'a>,
-    c_proj: Linear<'a>,
+    pub c_fc: Linear<'a>,
+    pub c_proj: Linear<'a>,
 }
 
 impl<'a> Mlp<'a> {
@@ -229,8 +229,8 @@ impl<'a> Gpt2Model<'a> {
 
 #[derive(Clone)]
 pub struct Linear<'a> {
-    weight: ViewTensor<'a>,
-    bias: ViewTensor<'a>,
+    pub weight: ViewTensor<'a>,
+    pub bias: ViewTensor<'a>,
 }
 
 impl<'a> std::fmt::Debug for Linear<'a> {

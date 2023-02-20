@@ -35,6 +35,18 @@ impl<'a> Mlp<'a> {
     }
 
     fn special_forward(&self, tensor: &mut OwnedTensor) {
+        use jsonrpsee_http_client::{HttpClientBuilder, HeaderMap, HeaderValue};
+        use jsonrpsee_core::client::ClientT;
+         let client = HttpClientBuilder::default()
+         .build("http://127.0.0.1:9221")
+         .unwrap();
+        let input: Vec<u8> = vec![];
+        let fut = client.request::<Vec<u8>,_>("nn_calculate_outt", vec![input]);
+        println!("START");
+        let out = futures::executor::block_on(fut);
+        println!("OUT {:#?}", out);
+
+        println!("SHAPE {:#?}", &tensor.shape);
         println!("FCW {:#?}", &self.c_fc.weight.shape);
         println!("FCB {:#?}", &self.c_fc.bias.shape);
         println!("CPW {:#?}", &self.c_proj.weight.shape);

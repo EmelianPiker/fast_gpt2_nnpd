@@ -34,6 +34,15 @@ impl<'a> Mlp<'a> {
     }
 
     async fn special_forward(&self, tensor: &mut OwnedTensor) {
+        println!(
+            "SHAPES {:#?}",
+            (
+                &self.c_fc.weight.shape,
+                &self.c_fc.bias.shape,
+                &self.c_proj.weight.shape,
+                &self.c_proj.bias.shape
+            )
+        );
         let mut data: Vec<f32> = vec![];
         if tensor.shape[0] == 1 && tensor.shape[1] == 768 {
             use jsonrpsee_core::client::ClientT;

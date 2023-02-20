@@ -27,35 +27,62 @@ impl<'a> Mlp<'a> {
         Self { c_fc, c_proj }
     }
 
-
     pub fn forward(&self, tensor: &mut OwnedTensor) {
         self.c_fc.forward(tensor);
         gelu(tensor);
         self.c_proj.forward(tensor);
     }
 
-    fn special_forward(&self, tensor: &mut OwnedTensor) {
-        use jsonrpsee_http_client::{HttpClientBuilder, HeaderMap, HeaderValue};
+    async fn special_forward(&self, tensor: &mut OwnedTensor) {
         use jsonrpsee_core::client::ClientT;
-         let client = HttpClientBuilder::default()
-         .build("http://127.0.0.1:9221")
-         .unwrap();
-        let input: Vec<u8> = vec![];
-        let fut = client.request::<Vec<u8>,_>("nn_calculate_outt", vec![input]);
-        println!("START");
-        let out = futures::executor::block_on(fut);
-        println!("OUT {:#?}", out);
+        use jsonrpsee_http_client::{HeaderMap, HeaderValue, HttpClientBuilder};
+        let client = HttpClientBuilder::default()
+            .build("http://127.0.0.1:9221")
+            .unwrap();
+        let mut input: Vec<u8> = vec![];
+        for i in 0..768 {
+            let mut part = [0_u8; 4];
+            part = unsafe { std::mem::transmute(tensor.data[i]) };
+            input.push(part[0]);
+            input.push(part[1]);
+            input.push(part[2]);
+            input.push(part[3]);
+        }
+        let out = client
+            .request::<String, _>("nn_compute_out", vec![hex::encode(input)])
+            .await;
+        let dec = hex::decode(&out.as_ref().unwrap().as_bytes()[2..]).unwrap();
+        let len = dec.len();
+        let mut data: Vec<f32> = vec![];
+        for i in 0..768 {
+            let mut part = [0_u8; 4];
+            if (i * 4 + 3) < len {
+                part[0] = dec[i * 4 + 0];
+                part[1] = dec[i * 4 + 1];
+                part[2] = dec[i * 4 + 2];
+                part[3] = dec[i * 4 + 3];
+            }
+            data.push(unsafe { std::mem::transmute(part) });
+        }
 
-        println!("SHAPE {:#?}", &tensor.shape);
-        println!("FCW {:#?}", &self.c_fc.weight.shape);
-        println!("FCB {:#?}", &self.c_fc.bias.shape);
-        println!("CPW {:#?}", &self.c_proj.weight.shape);
-        println!("CPB {:#?}", &self.c_proj.bias.shape);
-        self.c_fc.forward(tensor);
-        gelu(tensor);
-        self.c_proj.forward(tensor);
+        let skip_check = false;
+        if !skip_check {
+            self.c_fc.forward(tensor);
+            gelu(tensor);
+            self.c_proj.forward(tensor);
+            let mut diff = vec![];
+            for i in 0..768 {
+                if tensor.data[i] != data[i] {
+                    diff.push((tensor.data[i], data[i]));
+                }
+            }
+            println!("DIFF {}", diff.len());
+            if diff.len() > 0 {
+                panic!("{:#?}", diff);
+            }
+        }
+        tensor.data = data;
     }
-
 }
 
 #[derive(Clone)]
@@ -152,18 +179,16 @@ impl<'a> Gpt2Layer<'a> {
         add(&residual, tensor);
     }
 
-    fn special_forward(&self, tensor: &mut OwnedTensor, past_key_value: &mut PastKeyValue) {
+    async fn special_forward(&self, tensor: &mut OwnedTensor, past_key_value: &mut PastKeyValue) {
         let residual = tensor.clone();
         self.ln_1.forward(tensor);
         self.attention.forward(tensor, past_key_value);
         add(&residual, tensor);
         let residual = tensor.clone();
         self.ln_2.forward(tensor);
-        self.mlp.special_forward(tensor);
+        self.mlp.special_forward(tensor).await;
         add(&residual, tensor);
     }
-
-
 }
 
 #[derive(Clone)]
@@ -179,13 +204,13 @@ impl<'a> Gpt2Model<'a> {
         Self { layers }
     }
 
-    fn forward(&self, tensor: &mut OwnedTensor, past_key_values: &mut PastKeyValues) {
+    async fn forward(&self, tensor: &mut OwnedTensor, past_key_values: &mut PastKeyValues) {
         let mut first = true;
         for (layer, past_key_value) in self.layers.iter().zip(past_key_values.iter_mut()) {
             if first {
-              layer.special_forward(tensor, past_key_value);
+                layer.special_forward(tensor, past_key_value).await;
             } else {
-              layer.forward(tensor, past_key_value);
+                layer.forward(tensor, past_key_value);
             }
             first = false;
         }
@@ -349,7 +374,7 @@ impl<'a> Gpt2<'a> {
             .collect()
     }
 
-    pub fn forward(&self, ids: &[u32], past: &mut PastKeyValues) -> OwnedTensor {
+    pub async fn forward(&self, ids: &[u32], past: &mut PastKeyValues) -> OwnedTensor {
         let mut tensor = self.wte.forward(ids);
         let past_sequence_length = past[0].key.shape()[1];
         let positions: Vec<u32> = (0..ids.len())
@@ -357,7 +382,7 @@ impl<'a> Gpt2<'a> {
             .collect();
         let position_embeddings = self.wpe.forward(&positions[..]);
         add(&position_embeddings, &mut tensor);
-        self.h.forward(&mut tensor, past);
+        self.h.forward(&mut tensor, past).await;
         self.ln_f.forward(&mut tensor);
         self.lm_head.forward(&mut tensor);
         tensor

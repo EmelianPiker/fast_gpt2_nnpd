@@ -66,7 +66,7 @@ pub async fn run() -> Result<(), Gpt2Error> {
     let mut current_ids = ids.clone();
     for _i in 0..10 {
         let start = std::time::Instant::now();
-        let logits = gpt2.forward(&current_ids, &mut past_key_values);
+        let logits = gpt2.forward(&current_ids, &mut past_key_values).await;
         let new_id = special_argmax(&logits);
         ids.push(new_id as u32);
         current_ids = vec![new_id as u32];

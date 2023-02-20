@@ -30,6 +30,8 @@ serde_json = "1.0.91"
 regex = "1.7.1"
 jsonrpsee-core = "0.16.2"
 jsonrpsee-http-client = "0.16.2"
+curl = "0.4.44"
+hex = "0.4.3"
 
 [features]
 cblas = ["dep:cblas-sys", "dep:libc"]

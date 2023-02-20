@@ -1,12 +1,14 @@
 use axum::{
+    extract::Form,
     extract::State,
-    response::{IntoResponse,Html},
+    http::StatusCode,
+    response::{Html, IntoResponse},
     routing::{get, post},
-    http::StatusCode, Json, Router,
-   extract::Form,
+    Json, Router,
 };
 use fast_gpt2::{download::download, model::Gpt2, ops::special_argmax, Gpt2Error};
 use memmap2::{Mmap, MmapOptions};
+use regex::Regex;
 use safetensors::tensor::SafeTensors;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
@@ -14,8 +16,6 @@ use std::net::SocketAddr;
 use tokenizers::Tokenizer;
 use tower_http::trace::{self, TraceLayer};
 use tracing::{instrument, Level};
-use regex::Regex;
-
 
 #[derive(Clone)]
 struct AppState {
@@ -111,8 +111,8 @@ struct Outputs {
 
 //async fn health() -> impl IntoResponse {
 async fn health() -> Html<&'static str> {
-Html(
-"
+    Html(
+        "
   <html>
   <head>
     <title>POST Request Example</title>
@@ -145,8 +145,8 @@ Html(
     </script>
   </body>
 </html>
-"
-)
+",
+    )
 }
 
 async fn inference((State(state), payload): (State<AppState>, String)) -> impl IntoResponse {
@@ -154,7 +154,10 @@ async fn inference((State(state), payload): (State<AppState>, String)) -> impl I
         payload
     } else {
         let re = Regex::new(r"\r\n\r\n([^\r]*)\r\n").unwrap();
-        let a = re.captures(&payload).unwrap()[0].to_string().trim().to_string();
+        let a = re.captures(&payload).unwrap()[0]
+            .to_string()
+            .trim()
+            .to_string();
         println!("DEBUG3 {:#?}", a);
         Inputs { inputs: a }
     };
@@ -164,7 +167,10 @@ async fn inference((State(state), payload): (State<AppState>, String)) -> impl I
     let mut past_key_values = state.model.empty_past_key_values();
     let mut current_ids = ids.clone();
     for _i in 0..20 {
-        let logits = state.model.forward(&current_ids, &mut past_key_values);
+        let logits = state
+            .model
+            .forward(&current_ids, &mut past_key_values)
+            .await;
         let new_id = special_argmax(&logits);
         ids.push(new_id as u32);
         current_ids = vec![new_id as u32];
